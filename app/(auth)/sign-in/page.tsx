@@ -3,13 +3,8 @@
 
 import AuthForm from "@/components/AuthForm"
 import { signInWithCredentials } from "@/lib/actions/auth"
-import { z } from "zod"
 import type { SignInValues } from "@/lib/auth-types"
-
-const signInSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-})
+import { signInSchema } from "@/lib/validations"
 
 export default function Page() {
   const defaults: SignInValues = { email: "", password: "" }

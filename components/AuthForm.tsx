@@ -7,7 +7,7 @@ import {
   type FieldValues,
   type Path,
   type UseFormReturn,
-  type Resolver,
+  type DefaultValues,
 } from "react-hook-form"
 import type { ZodType } from "zod"
 
@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation"
 
 interface Props<T extends FieldValues> {
   schema: ZodType<T>
+  // ✅ passe DefaultValues<T> aqui; evita o erro do "Type 'T' is not assignable..."
   defaultValues: T
   onSubmit: (data: T) => Promise<{ success: boolean; error?: string }>
   type: "SIGN_IN" | "SIGN_UP"
@@ -40,14 +41,10 @@ const AuthForm = <T extends FieldValues>({
   const router = useRouter()
   const isSignIn = type === "SIGN_IN"
 
-  // ✅ useForm com 3 genéricos: <T, any, T>
-  //    - garante que control seja Control<T, any, T>
-  //    - garante que handleSubmit aceite SubmitHandler<T>
-  const form: UseFormReturn<T, any, T> = useForm<T, any, T>({
-    // cast necessário porque zodResolver retorna Resolver<TFieldValues>
-    resolver: zodResolver(schema) as unknown as Resolver<T, any, T>,
-    // se o TS reclamar aqui, você pode manter esse cast:
-    defaultValues: defaultValues as T,
+  // ✅ useForm com 3 genéricos para alinhar Control/Resolver/handleSubmit
+  const form: UseFormReturn<T> = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: defaultValues as DefaultValues<T>,
   })
 
   const handleSubmit: SubmitHandler<T> = async (data) => {
@@ -59,7 +56,7 @@ const AuthForm = <T extends FieldValues>({
           ? "You have successfully signed in."
           : "You have successfully signed up."
       )
-      router.push(isSignIn ? "/dashboard" : "/sign-in")
+      router.push(isSignIn ? "/admin/dashboard" : "/sign-in")
     } else {
       toast.error(result.error ?? "An error occurred.")
     }

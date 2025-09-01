@@ -5,17 +5,7 @@ import AuthForm from "@/components/AuthForm"
 import { signUpWithCredentials } from "@/lib/actions/auth"
 import { z } from "zod"
 import type { SignUpValues } from "@/lib/auth-types"
-
-const signUpSchema = z.object({
-  name: z.string().min(2),
-  email: z.string().email(),
-  password: z.string().min(6),
-  dealershipName: z.string().optional(),
-  dealershipSlug: z
-    .string()
-    .regex(/^[a-z0-9-]+$/)
-    .optional(),
-})
+import { signUpSchema } from "@/lib/validations"
 
 export default function Page() {
   const defaults: SignUpValues = {
