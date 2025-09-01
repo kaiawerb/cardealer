@@ -1,15 +1,398 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// schema.prisma
+datasource db {
+  provider = "postgresql" // ou mysql/sqlserver; ajuste conforme seu DB
+  url      = env("DATABASE_URL")
+}
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../lib/generated/prisma"
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+/**
+ * =========================
+ * Enums
+ * =========================
+ */
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  SALES
+  VIEWER
+}
+
+enum FuelType {
+  GASOLINE
+  ETHANOL
+  FLEX
+  DIESEL
+  HYBRID
+  ELECTRIC
+  LPG
+  CNG
+  OTHER
+}
+
+enum Transmission {
+  MANUAL
+  AUTOMATIC
+  CVT
+  DUAL_CLUTCH
+  OTHER
+}
+
+enum BodyType {
+  SEDAN
+  HATCH
+  SUV
+  PICKUP
+  COUPE
+  CONVERTIBLE
+  WAGON
+  VAN
+  MINIVAN
+  OTHER
+}
+
+enum Drivetrain {
+  FWD
+  RWD
+  AWD
+  OTHER
+}
+
+enum Condition {
+  NEW
+  USED
+  CERTIFIED
+}
+
+enum Currency {
+  BRL
+  USD
+}
+
+enum LeadSource {
+  WEBSITE
+  WHATSAPP
+  FACEBOOK
+  INSTAGRAM
+  MARKETPLACE
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFIED
+  NEGOTIATION
+  WON
+  LOST
+  ARCHIVED
+}
+
+enum VehicleStatus {
+  DRAFT
+  PUBLISHED
+  RESERVED
+  SOLD
+  ARCHIVED
+}
+
+/**
+ * =========================
+ * Multi-tenant core
+ * =========================
+ */
+model Dealership {
+  id         String   @id @default(cuid())
+  name       String
+  slug       String
+  documentId String? // CNPJ/EIN etc.
+  phone      String?
+  email      String?
+  currency   Currency @default(BRL)
+  logoUrl    String?
+  website    String?
+  timeZone   String? // ex: "America/Sao_Paulo"
+
+  // Address (flatten simples)
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String? // "BR", "US"
+
+  // Relations
+  users        UserOnDealership[]
+  vehicles     Vehicle[]
+  leads        Lead[]
+  appointments Appointment[]
+  proposals    Proposal[]
+  media        Media[]
+
+  // Control
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  ActivityLog ActivityLog[]
+
+  @@unique([slug])
+  @@index([name])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String // se usar auth própria; se usar OAuth, guarde providerId
+  avatarUrl    String?
+  lastLoginAt  DateTime?
+  isActive     Boolean   @default(true)
+
+  memberships UserOnDealership[]
+  activities  ActivityLog[]
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  Lead        Lead[]
+  Appointment Appointment[]
+}
+
+model UserOnDealership {
+  id           String @id @default(cuid())
+  userId       String
+  dealershipId String
+  role         Role   @default(VIEWER)
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, dealershipId])
+  @@index([dealershipId, role])
+}
+
+/**
+ * =========================
+ * Catálogo de Veículos
+ * =========================
+ */
+model Vehicle {
+  id           String        @id @default(cuid())
+  dealershipId String
+  title        String // ex: "Honda Civic Touring 1.5 2020"
+  slug         String
+  status       VehicleStatus @default(DRAFT)
+
+  // Especificações
+  brand        String?
+  model        String?
+  trim         String?
+  year         Int?
+  modelYear    Int? // para Brasil (ano fab/modelo)
+  vin          String? // chassi
+  plate        String? // placa (opcional)
+  bodyType     BodyType?
+  condition    Condition?    @default(USED)
+  fuelType     FuelType?
+  transmission Transmission?
+  drivetrain   Drivetrain?
+  doors        Int?
+  seats        Int?
+  colorExt     String?
+  colorInt     String?
+
+  // Métricas
+  mileage            Int? // em km
+  priceCents         Int? // armazenar em centavos
+  currency           Currency @default(BRL)
+  priceOriginalCents Int? // se houver preço antes/desconto
+
+  // Conteúdo
+  description String?
+  features    VehicleFeature[]
+  media       Media[] // fotos/videos anexos
+
+  // Sinalizações
+  featured    Boolean   @default(false) // destacar no site
+  publishedAt DateTime?
+  reservedAt  DateTime?
+  soldAt      DateTime?
+
+  // Controle
+  dealership  Dealership    @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  Lead        Lead[]
+  Proposal    Proposal[]
+  Appointment Appointment[]
+
+  @@unique([dealershipId, slug]) // slug único dentro do tenant
+  @@index([dealershipId, status, createdAt])
+  @@index([dealershipId, priceCents])
+  @@index([dealershipId, year, mileage])
+  @@index([brand, model, year])
+}
+
+model Feature {
+  id   String @id @default(cuid())
+  name String
+  slug String
+
+  // Features são globais para facilitar reuso; se quiser por tenant, adicione dealershipId
+  vehicles VehicleFeature[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([slug])
+  @@index([name])
+}
+
+model VehicleFeature {
+  vehicleId String
+  featureId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  feature   Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@id([vehicleId, featureId])
+}
+
+/**
+ * =========================
+ * Mídia
+ * =========================
+ */
+model Media {
+  id           String  @id @default(cuid())
+  dealershipId String
+  vehicleId    String?
+  url          String
+  type         String // "image/jpeg", "video/mp4", etc.
+  alt          String?
+  sortOrder    Int? // ordenação da galeria
+  isCover      Boolean @default(false)
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle?   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dealershipId, vehicleId])
+  @@index([vehicleId, isCover])
+}
+
+/**
+ * =========================
+ * Leads, Propostas e Agenda
+ * =========================
+ */
+model Lead {
+  id           String     @id @default(cuid())
+  dealershipId String
+  name         String
+  email        String?
+  phone        String?
+  source       LeadSource @default(WEBSITE)
+  status       LeadStatus @default(NEW)
+  notes        String?
+
+  // Interesse
+  vehicleId String?
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  // Owner atual (vendedor responsável)
+  ownerId String?
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  Proposal    Proposal[]
+  Appointment Appointment[]
+
+  @@index([dealershipId, status, createdAt])
+  @@index([dealershipId, ownerId])
+  @@index([vehicleId])
+}
+
+model Proposal {
+  id               String   @id @default(cuid())
+  dealershipId     String
+  leadId           String
+  vehicleId        String
+  amountCents      Int
+  currency         Currency @default(BRL)
+  downPaymentCents Int? // entrada
+  termMonths       Int? // prazo
+  interestAPR      Float? // taxa anual
+  approved         Boolean? // retorno do banco/financiadora
+  externalRef      String? // id na financiadora
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+  lead       Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dealershipId, createdAt])
+  @@index([leadId])
+  @@index([vehicleId])
+}
+
+model Appointment {
+  id           String  @id @default(cuid())
+  dealershipId String
+  leadId       String
+  userId       String? // vendedor responsável
+  vehicleId    String?
+
+  title    String
+  notes    String?
+  startsAt DateTime
+  endsAt   DateTime?
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+  lead       Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  vehicle    Vehicle?   @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dealershipId, startsAt])
+}
+
+/**
+ * =========================
+ * Auditoria simples
+ * =========================
+ */
+model ActivityLog {
+  id           String  @id @default(cuid())
+  userId       String?
+  dealershipId String?
+  entity       String // "Vehicle" | "Lead" | "Proposal" | ...
+  entityId     String
+  action       String // "CREATE" | "UPDATE" | "DELETE" | "STATUS_CHANGE"
+  metadata     Json?
+  ip           String?
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  dealership Dealership? @relation(fields: [dealershipId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([dealershipId, entity, entityId])
+  @@index([userId])
 }

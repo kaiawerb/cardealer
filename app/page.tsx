@@ -1,4 +1,5 @@
 import Image from "next/image"
+// Em qualquer server file:
 
 export default function Home() {
   return (
